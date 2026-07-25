@@ -15,7 +15,7 @@ let cachedPort: any = null;
 
 export async function getSerialPorts(): Promise<any[]> {
   if (!isWebSerialSupported()) return [];
-  // @ts-expect-error
+
   return navigator.serial.getPorts();
 }
 
@@ -25,14 +25,16 @@ export async function getSerialPorts(): Promise<any[]> {
  */
 export async function connectSerialPort(
   baudRate = 9600,
-  forcePicker = false
+  forcePicker = false,
 ): Promise<{ success: boolean; portInfo?: string; error?: string }> {
   if (!isWebSerialSupported()) {
-    return { success: false, error: "Web Serial tidak didukung. Gunakan Chrome/Edge." };
+    return {
+      success: false,
+      error: "Web Serial tidak didukung. Gunakan Chrome/Edge.",
+    };
   }
 
   try {
-    // @ts-expect-error
     const navSerial = navigator.serial;
     let port = cachedPort;
 
@@ -93,13 +95,12 @@ export async function disconnectSerialPort(): Promise<void> {
  */
 export async function printSerial(
   data: Uint8Array,
-  baudRate = 9600
+  baudRate = 9600,
 ): Promise<void> {
   if (!isWebSerialSupported()) {
     throw new Error("Web Serial API tidak didukung");
   }
 
-  // @ts-expect-error
   const navSerial = navigator.serial;
   let port = cachedPort;
 
