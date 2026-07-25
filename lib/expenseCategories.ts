@@ -1,0 +1,1 @@
+export const PRESET_EXPENSE_CATEGORIES = ["Operasional","Gaji & Upah","Sewa","Listrik & Air","Internet & Telepon","Transportasi","Perlengkapan","Pemeliharaan","Pajak & Perizinan","Marketing & Promosi","Kemasan","Lainnya"] as const;
