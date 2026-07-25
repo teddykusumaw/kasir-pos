@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Pencil, Search, Package } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { Product } from "@/types/database";
+// Supplier type used for dropdown
 import { addStockBatch } from "@/lib/fifo";
+import { Product, Profile, Supplier } from "@/types/database";
 
 interface Props {
   initialProducts: Product[];
@@ -19,6 +20,7 @@ const emptyForm = {
   stock: "",
   min_stock: "5",
   category: "",
+  supplier_id: "",
   unit: "pcs",
   status: "active",
 };
@@ -30,14 +32,24 @@ export default function ProductsClient({ initialProducts }: Props) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [error, setError] = useState("");
   const supabase = createClient();
+
+  useEffect(() => {
+    supabase
+      .from("suppliers")
+      .select("*")
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data }) => setSuppliers((data as Supplier[]) || []));
+  }, [supabase]);
 
   const filtered = products.filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.barcode && p.barcode.includes(search)) ||
-      (p.category && p.category.toLowerCase().includes(search.toLowerCase()))
+      (p.category && p.category.toLowerCase().includes(search.toLowerCase())),
   );
 
   const openAdd = () => {
@@ -57,6 +69,7 @@ export default function ProductsClient({ initialProducts }: Props) {
       stock: String(p.stock),
       min_stock: String(p.min_stock),
       category: p.category || "",
+      supplier_id: (p as any).supplier_id || "",
       unit: p.unit || "pcs",
       status: p.status || "active",
     });
@@ -77,6 +90,7 @@ export default function ProductsClient({ initialProducts }: Props) {
       stock: Number(form.stock),
       min_stock: Number(form.min_stock),
       category: form.category.trim() || null,
+      supplier_id: form.supplier_id || null,
       unit: form.unit.trim() || "pcs",
       status: form.status === "inactive" ? "inactive" : "active",
     };
@@ -93,10 +107,19 @@ export default function ProductsClient({ initialProducts }: Props) {
         // FIFO: stok naik → batch baru
         const delta = Number(payload.stock) - Number(editing.stock);
         if (delta > 0) {
-          await addStockBatch(editing.id, delta, Number(payload.cost) || 0, "Update stok");
+          await addStockBatch(
+            editing.id,
+            delta,
+            Number(payload.cost) || 0,
+            "Update stok",
+            {
+              supplier_id: payload.supplier_id || null,
+              delivery_date: new Date().toISOString().slice(0, 10),
+            },
+          );
         }
         setProducts((prev) =>
-          prev.map((p) => (p.id === editing.id ? data : p))
+          prev.map((p) => (p.id === editing.id ? data : p)),
         );
       } else {
         const { data, error: err } = await supabase
@@ -106,9 +129,20 @@ export default function ProductsClient({ initialProducts }: Props) {
           .single();
         if (err) throw err;
         if (Number(payload.stock) > 0) {
-          await addStockBatch(data.id, Number(payload.stock), Number(payload.cost) || 0, "Stok awal");
+          await addStockBatch(
+            data.id,
+            Number(payload.stock),
+            Number(payload.cost) || 0,
+            "Stok awal",
+            {
+              supplier_id: payload.supplier_id || null,
+              delivery_date: new Date().toISOString().slice(0, 10),
+            },
+          );
         }
-        setProducts((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+        setProducts((prev) =>
+          [...prev, data].sort((a, b) => a.name.localeCompare(b.name)),
+        );
       }
       setShowModal(false);
     } catch (err: any) {
@@ -122,7 +156,9 @@ export default function ProductsClient({ initialProducts }: Props) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Manajemen Produk</h1>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Manajemen Produk
+          </h1>
           <p className="text-slate-500">Tambah & update item + stok</p>
         </div>
         <button
@@ -212,7 +248,9 @@ export default function ProductsClient({ initialProducts }: Props) {
                             : "bg-slate-200 text-slate-600"
                         }`}
                       >
-                        {(p.status || "active") === "active" ? "Aktif" : "Nonaktif"}
+                        {(p.status || "active") === "active"
+                          ? "Aktif"
+                          : "Nonaktif"}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -282,6 +320,25 @@ export default function ProductsClient({ initialProducts }: Props) {
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                   />
                 </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Supplier
+                  </label>
+                  <select
+                    value={form.supplier_id}
+                    onChange={(e) =>
+                      setForm({ ...form, supplier_id: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  >
+                    <option value="">— Tanpa supplier —</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -307,9 +364,7 @@ export default function ProductsClient({ initialProducts }: Props) {
                     type="number"
                     min="0"
                     value={form.cost}
-                    onChange={(e) =>
-                      setForm({ ...form, cost: e.target.value })
-                    }
+                    onChange={(e) => setForm({ ...form, cost: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                   />
                 </div>
@@ -350,9 +405,7 @@ export default function ProductsClient({ initialProducts }: Props) {
                   </label>
                   <input
                     value={form.unit}
-                    onChange={(e) =>
-                      setForm({ ...form, unit: e.target.value })
-                    }
+                    onChange={(e) => setForm({ ...form, unit: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                   />
                 </div>

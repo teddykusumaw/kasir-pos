@@ -84,7 +84,6 @@ export interface DailySales {
   count: number;
 }
 
-
 export interface Expense {
   id: string;
   expense_date: string;
@@ -95,7 +94,6 @@ export interface Expense {
   created_by: string | null;
   created_at: string;
 }
-
 
 export interface Receivable {
   id: string;
@@ -110,3 +108,16 @@ export interface Receivable {
 }
 
 export type Payable = Receivable;
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
