@@ -121,3 +121,19 @@ export interface Supplier {
   created_at: string;
   updated_at: string;
 }
+
+export interface Product {
+  id: string;
+  name: string;
+  barcode: string | null;
+  price: number;
+  cost: number;
+  stock: number;
+  min_stock: number;
+  category: string | null;
+  unit: string;
+  status: "active" | "inactive";
+  supplier_id: string | null; // ← ini
+  created_at: string;
+  updated_at: string;
+}
