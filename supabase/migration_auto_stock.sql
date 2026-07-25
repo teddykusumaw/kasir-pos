@@ -1,11 +1,10 @@
 -- Manajemen stok otomatis: trigger + log pergerakan
-
 CREATE TABLE IF NOT EXISTS public.stock_movements (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
   qty_change INTEGER NOT NULL,
   stock_after INTEGER,
-  reason TEXT NOT NULL, -- sale | purchase | adjustment | return
+  reason TEXT NOT NULL,
   ref_id UUID,
   note TEXT,
   created_by UUID REFERENCES public.profiles(id),
@@ -14,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
 
 CREATE INDEX IF NOT EXISTS idx_stock_movements_product
   ON public.stock_movements(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_reason
+  ON public.stock_movements(reason, created_at DESC);
 
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Auth read stock_movements" ON public.stock_movements;
@@ -23,7 +24,7 @@ DROP POLICY IF EXISTS "Auth write stock_movements" ON public.stock_movements;
 CREATE POLICY "Auth write stock_movements" ON public.stock_movements
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
--- Kurangi stok otomatis saat sale_items masuk
+-- Kurangi stok saat sale_items INSERT
 CREATE OR REPLACE FUNCTION public.fn_sale_item_decrease_stock()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -52,7 +53,7 @@ CREATE TRIGGER trg_sale_item_stock
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_sale_item_decrease_stock();
 
--- Naikkan stok otomatis saat purchase_items masuk
+-- Naikkan stok saat purchase_items INSERT
 CREATE OR REPLACE FUNCTION public.fn_purchase_item_increase_stock()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -81,3 +82,7 @@ CREATE TRIGGER trg_purchase_item_stock
   AFTER INSERT ON public.purchase_items
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_purchase_item_increase_stock();
+
+-- Index barcode untuk lookup scanner
+CREATE INDEX IF NOT EXISTS idx_products_barcode ON public.products(barcode)
+  WHERE barcode IS NOT NULL;

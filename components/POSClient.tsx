@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { Product, CartItem, Profile } from "@/types/database";
 import Receipt from "./Receipt";
-import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
+import { useBarcodeScanner, playScanBeep } from "@/hooks/useBarcodeScanner";
 import {
   printThermalReceipt,
   printKitchenSerial,
@@ -123,34 +123,61 @@ export default function POSClient({ profile }: Props) {
   // ---------- Smart Barcode Scanner (onscan.js) ----------
   const handleScannedCode = useCallback(
     async (code: string) => {
-      // 1. Exact barcode match from cached products
-      let found = productsRef.current.find((p) => p.barcode === code);
+      if (processing) return;
 
-      // 2. Fallback: query Supabase
+      // 1. Cache lokal: barcode exact + aktif + ada stok
+      let found = productsRef.current.find(
+        (p) =>
+          p.barcode === code &&
+          (p.status || "active") === "active"
+      );
+
+      // 2. Fallback Supabase (kolom minimal + index barcode)
       if (!found) {
         const { data } = await supabase
           .from("products")
-          .select("*")
+          .select(
+            "id, name, barcode, price, cost, stock, min_stock, category, unit, status, supplier_id"
+          )
           .eq("barcode", code)
+          .eq("status", "active")
           .maybeSingle();
         found = data || undefined;
+        if (found) {
+          // sisipkan ke cache lokal
+          setProducts((prev) =>
+            prev.some((x) => x.id === found!.id) ? prev : [...prev, found!]
+          );
+        }
       }
 
-      if (found) {
-        addToCart(found);
-        showMsg("success", `✓ ${found.name}`);
-      } else {
+      if (!found) {
+        playScanBeep(false);
         showMsg("error", `Barcode "${code}" tidak ditemukan`);
+        return;
       }
+      if (found.stock < 1) {
+        playScanBeep(false);
+        showMsg("error", `${found.name} stok habis`);
+        return;
+      }
+
+      addToCart(found);
+      playScanBeep(true);
+      showMsg("success", `✓ ${found.name}`);
+      // kosongkan search box setelah scan hardware
+      setSearch("");
+      setShowSearch(false);
     },
-    [addToCart, supabase]
+    [addToCart, supabase, processing]
   );
 
   useBarcodeScanner({
     onScan: handleScannedCode,
-    enabled: true,
-    minLength: 4,
-    avgTimeByChar: 40,
+    enabled: !processing,
+    minLength: 3,
+    avgTimeByChar: 50,
+    debounceMs: 600,
   });
 
   // Manual search (typing + Enter still works for name search)

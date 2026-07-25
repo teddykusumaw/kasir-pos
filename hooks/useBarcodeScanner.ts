@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useCallback } from "react";
 
-// onscan.js is a UMD/global library – we declare the type
 declare global {
   interface Window {
     onScan?: {
@@ -18,44 +17,59 @@ interface UseBarcodeScannerOptions {
   onScan: (code: string) => void;
   enabled?: boolean;
   minLength?: number;
-  /** Average ms between characters from a real scanner (default 40) */
+  /** ms rata-rata antar karakter scanner (default 50) */
   avgTimeByChar?: number;
+  /** Abaikan scan berulang kode sama dalam ms (default 600) */
+  debounceMs?: number;
 }
 
 /**
- * Smart barcode scanner detection using onscan.js
- * Distinguishes hardware scanner input from manual typing by speed + Enter suffix.
+ * Deteksi scanner hardware via onscan.js (kecepatan ketik + Enter).
+ * Aman untuk SSR (dynamic import).
  */
 export function useBarcodeScanner({
   onScan,
   enabled = true,
-  minLength = 4,
-  avgTimeByChar = 40,
+  minLength = 3,
+  avgTimeByChar = 50,
+  debounceMs = 600,
 }: UseBarcodeScannerOptions) {
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
+  const lastRef = useRef<{ code: string; at: number }>({ code: "", at: 0 });
 
-  const handleScan = useCallback((code: string) => {
-    const trimmed = code.trim();
-    if (trimmed.length >= minLength) {
+  const handleScan = useCallback(
+    (code: string) => {
+      const trimmed = code.trim();
+      if (trimmed.length < minLength) return;
+      const now = Date.now();
+      if (
+        lastRef.current.code === trimmed &&
+        now - lastRef.current.at < debounceMs
+      ) {
+        return; // cegah double-scan
+      }
+      lastRef.current = { code: trimmed, at: now };
       onScanRef.current(trimmed);
-    }
-  }, [minLength]);
+    },
+    [minLength, debounceMs]
+  );
 
   useEffect(() => {
     if (!enabled || typeof window === "undefined") return;
 
-    let attached = false;
+    let cancelled = false;
 
     const init = async () => {
-      // Dynamic import so SSR is happy
       try {
-        // onscan.js attaches to window / exports default
         const onScanModule = await import("onscan.js");
-        const onScan = onScanModule.default || (window as any).onScan || onScanModule;
+        const onScan =
+          (onScanModule as any).default ||
+          (window as any).onScan ||
+          onScanModule;
 
-        if (!onScan?.attachTo) {
-          console.warn("[useBarcodeScanner] onscan.js not loaded correctly");
+        if (!onScan?.attachTo || cancelled) {
+          console.warn("[useBarcodeScanner] onscan.js tidak siap");
           return;
         }
 
@@ -64,39 +78,48 @@ export function useBarcodeScanner({
         }
 
         onScan.attachTo(document, {
-          suffixKeyCodes: [13], // Enter
+          suffixKeyCodes: [13],
           reactToPaste: false,
           minLength,
           avgTimeByChar,
-          // Ignore key events that come from focused inputs when user is typing slowly
-          // (onscan already handles speed detection)
-          onScan: (sCode: string) => {
-            handleScan(sCode);
-          },
-          onScanError: () => {
-            // silently ignore incomplete / slow input
-          },
+          ignoreIfFocusOn: false,
+          onScan: (sCode: string) => handleScan(sCode),
+          onScanError: () => {},
         });
-
-        attached = true;
       } catch (err) {
-        console.error("[useBarcodeScanner] Failed to load onscan.js", err);
+        console.error("[useBarcodeScanner]", err);
       }
     };
 
     init();
 
     return () => {
-      if (attached) {
-        try {
-          const onScan = (window as any).onScan;
-          if (onScan?.isAttachedTo?.(document)) {
-            onScan.detachFrom(document);
-          }
-        } catch {
-          // ignore
+      cancelled = true;
+      try {
+        const onScan = (window as any).onScan;
+        if (onScan?.isAttachedTo?.(document)) {
+          onScan.detachFrom(document);
         }
+      } catch {
+        /* ignore */
       }
     };
   }, [enabled, minLength, avgTimeByChar, handleScan]);
+}
+
+/** Beep pendek sukses scan (opsional) */
+export function playScanBeep(ok = true) {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = ok ? 880 : 220;
+    gain.gain.value = 0.08;
+    osc.start();
+    osc.stop(ctx.currentTime + (ok ? 0.08 : 0.15));
+  } catch {
+    /* ignore */
+  }
 }
