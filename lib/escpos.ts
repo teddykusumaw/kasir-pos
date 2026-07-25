@@ -8,17 +8,13 @@ export type PaperWidth = 32 | 42 | 48;
 const ESC = 0x1b;
 const GS = 0x1d;
 
-function encoder(): TextEncoder {
-  // Prefer latin1-ish for thermal; fallback
-  try {
-    return new TextEncoder("latin1");
-  } catch {
-    return new TextEncoder("utf-8");
-  }
-}
-
+/** Encode single-byte untuk printer thermal */
 function enc(text: string): Uint8Array {
-  return encoder().encode(text);
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) {
+    out[i] = text.charCodeAt(i) & 0xff;
+  }
+  return out;
 }
 
 function concat(...parts: Uint8Array[]): Uint8Array {
@@ -151,9 +147,9 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
         row(
           `${item.quantity} x ${formatIdr(item.price)}`,
           formatIdr(item.subtotal),
-          w
-        )
-      )
+          w,
+        ),
+      ),
     );
   }
 
@@ -165,9 +161,9 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
         row(
           `${data.tax_name || "PPN"} (${data.tax_rate || 0}%)`,
           formatIdr(data.tax_amount || 0),
-          w
-        )
-      )
+          w,
+        ),
+      ),
     );
   }
   parts.push(bold(true));
@@ -180,9 +176,9 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
         data.payment_method === "cash" && data.cash_received != null
           ? formatIdr(data.cash_received)
           : formatIdr(data.total),
-        w
-      )
-    )
+        w,
+      ),
+    ),
   );
   if (data.payment_method === "cash" && data.change_amount != null) {
     parts.push(enc(row("Kembalian", formatIdr(data.change_amount), w)));
@@ -201,16 +197,14 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   return concat(...parts);
 }
 
-export function buildEscPosKitchen(
-  data: {
-    id: string;
-    created_at: string;
-    cashier_name?: string;
-    items: EscPosReceiptItem[];
-    paperWidth?: PaperWidth;
-    autoCut?: boolean;
-  }
-): Uint8Array {
+export function buildEscPosKitchen(data: {
+  id: string;
+  created_at: string;
+  cashier_name?: string;
+  items: EscPosReceiptItem[];
+  paperWidth?: PaperWidth;
+  autoCut?: boolean;
+}): Uint8Array {
   const w = data.paperWidth || 42;
   const parts: Uint8Array[] = [init()];
 
