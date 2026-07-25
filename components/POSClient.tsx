@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { mapToProduct } from "@/lib/mapProduct";
 import {
   Plus,
   Minus,
@@ -140,7 +141,7 @@ export default function POSClient({ profile }: Props) {
           .eq("barcode", code)
           .eq("status", "active")
           .maybeSingle();
-        found = (data as unknown as Product) || undefined;
+        found = mapToProduct(data) ?? undefined;
         if (found) {
           // sisipkan ke cache lokal
           setProducts((prev) =>
