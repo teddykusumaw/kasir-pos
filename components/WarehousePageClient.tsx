@@ -1,16 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Product, Profile } from "@/types/database";
+import { Product, Profile, Supplier } from "@/types/database";
 import WarehouseClient from "./WarehouseClient";
 import ForecastClient from "./ForecastClient";
 
 export default function WarehousePageClient({
   profile,
   products,
+  suppliers = [],
+  deliveryByProduct = {},
 }: {
   profile: Profile;
   products: Product[];
+  suppliers?: Supplier[];
+  deliveryByProduct?: Record<string, string>;
 }) {
   const [tab, setTab] = useState<"stok" | "forecast">("stok");
 
@@ -41,7 +45,11 @@ export default function WarehousePageClient({
         </button>
       </div>
       {tab === "stok" ? (
-        <WarehouseClient products={products} />
+        <WarehouseClient
+          products={products}
+          suppliers={suppliers}
+          deliveryByProduct={deliveryByProduct}
+        />
       ) : (
         <ForecastClient profile={profile} />
       )}

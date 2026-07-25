@@ -75,8 +75,7 @@ export async function connectBluetoothPrinter(): Promise<{
     // Optional filters for known printer services + acceptAllDevices fallback
     const optionalServices = PRINTER_PROFILES.map((p) => p.service);
 
-    // @ts-expect-error Bluetooth types
-    const device: BluetoothDevice = await navigator.bluetooth.requestDevice({
+    const device: BluetoothDevice = await (navigator as any).bluetooth.requestDevice({
       acceptAllDevices: true,
       optionalServices,
     });

@@ -3,20 +3,30 @@
 import { useState, useMemo } from "react";
 import { Search, Download, FileSpreadsheet, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { Product } from "@/types/database";
+import { Product, Supplier } from "@/types/database";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 interface Props {
   products: Product[];
+  suppliers?: Supplier[];
+  /** product_id -> latest delivery_date from batches */
+  deliveryByProduct?: Record<string, string>;
 }
 
 type StockFilter = "all" | "low" | "out" | "ok";
 
-export default function WarehouseClient({ products }: Props) {
+export default function WarehouseClient({
+  products,
+  suppliers = [],
+  deliveryByProduct = {},
+}: Props) {
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [deliveryFrom, setDeliveryFrom] = useState("");
+  const [deliveryTo, setDeliveryTo] = useState("");
 
   const categories = useMemo(() => {
     const cats = new Set(
@@ -25,6 +35,12 @@ export default function WarehouseClient({ products }: Props) {
     return Array.from(cats).sort();
   }, [products]);
 
+  const supplierName = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of suppliers) m[s.id] = s.name;
+    return m;
+  }, [suppliers]);
+
   const filtered = useMemo(() => {
     return products.filter((p) => {
       const matchSearch =
@@ -32,13 +48,32 @@ export default function WarehouseClient({ products }: Props) {
         (p.barcode && p.barcode.includes(search));
       const matchCat =
         categoryFilter === "all" || p.category === categoryFilter;
+      const sid = (p as any).supplier_id as string | null | undefined;
+      const matchSup =
+        supplierFilter === "all" ||
+        (supplierFilter === "none" && !sid) ||
+        sid === supplierFilter;
       let matchStock = true;
       if (stockFilter === "low") matchStock = p.stock > 0 && p.stock <= p.min_stock;
       if (stockFilter === "out") matchStock = p.stock === 0;
       if (stockFilter === "ok") matchStock = p.stock > p.min_stock;
-      return matchSearch && matchCat && matchStock;
+      const deliv = deliveryByProduct[p.id] || "";
+      let matchDeliv = true;
+      if (deliveryFrom && deliv && deliv < deliveryFrom) matchDeliv = false;
+      if (deliveryTo && deliv && deliv > deliveryTo) matchDeliv = false;
+      if ((deliveryFrom || deliveryTo) && !deliv) matchDeliv = false;
+      return matchSearch && matchCat && matchSup && matchStock && matchDeliv;
     });
-  }, [products, search, stockFilter, categoryFilter]);
+  }, [
+    products,
+    search,
+    stockFilter,
+    categoryFilter,
+    supplierFilter,
+    deliveryFrom,
+    deliveryTo,
+    deliveryByProduct,
+  ]);
 
   const totalItems = filtered.length;
   const totalStock = filtered.reduce((s, p) => s + p.stock, 0);
@@ -46,11 +81,13 @@ export default function WarehouseClient({ products }: Props) {
   const lowCount = products.filter((p) => p.stock <= p.min_stock).length;
 
   const exportCSV = () => {
-    const headers = ["Nama", "Barcode", "Kategori", "Stok", "Min Stok", "Satuan", "Harga", "Modal", "Nilai Stok"];
+    const headers = ["Nama", "Barcode", "Kategori", "Supplier", "Kirim terakhir", "Stok", "Min Stok", "Satuan", "Harga", "Modal", "Nilai Stok"];
     const rows = filtered.map((p) => [
       p.name,
       p.barcode || "",
       p.category || "",
+      supplierName[(p as any).supplier_id] || "",
+      deliveryByProduct[p.id] || "",
       p.stock,
       p.min_stock,
       p.unit,
@@ -178,6 +215,33 @@ export default function WarehouseClient({ products }: Props) {
             </option>
           ))}
         </select>
+        <select
+          value={supplierFilter}
+          onChange={(e) => setSupplierFilter(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-slate-300 text-sm outline-none"
+        >
+          <option value="all">Semua Supplier</option>
+          <option value="none">Tanpa supplier</option>
+          {suppliers.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          value={deliveryFrom}
+          onChange={(e) => setDeliveryFrom(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-slate-300 text-sm"
+          title="Kirim dari tanggal"
+        />
+        <input
+          type="date"
+          value={deliveryTo}
+          onChange={(e) => setDeliveryTo(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-slate-300 text-sm"
+          title="Kirim sampai tanggal"
+        />
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -188,6 +252,8 @@ export default function WarehouseClient({ products }: Props) {
                 <th className="text-left px-4 py-3 font-medium">Produk</th>
                 <th className="text-left px-4 py-3 font-medium">Barcode</th>
                 <th className="text-left px-4 py-3 font-medium">Kategori</th>
+                <th className="text-left px-4 py-3 font-medium">Supplier</th>
+                <th className="text-left px-4 py-3 font-medium">Kirim terakhir</th>
                 <th className="text-left px-4 py-3 font-medium">Stok</th>
                 <th className="text-left px-4 py-3 font-medium">Min</th>
                 <th className="text-left px-4 py-3 font-medium">Harga</th>
@@ -208,6 +274,12 @@ export default function WarehouseClient({ products }: Props) {
                     </td>
                     <td className="px-4 py-2.5 text-slate-500">
                       {p.category || "-"}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">
+                      {supplierName[(p as any).supplier_id] || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-500 text-xs">
+                      {deliveryByProduct[p.id] || "—"}
                     </td>
                     <td className="px-4 py-2.5 font-semibold">
                       {p.stock} {p.unit}

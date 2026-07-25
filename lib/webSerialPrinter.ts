@@ -1,8 +1,5 @@
 /**
  * Web Serial API — USB / serial thermal printers
- * - requestPort + remember last port (getPorts)
- * - chunked write
- * - configurable baud rate
  */
 
 "use client";
@@ -11,21 +8,20 @@ export function isWebSerialSupported(): boolean {
   return typeof navigator !== "undefined" && "serial" in navigator;
 }
 
+function getNavSerial(): any {
+  return (navigator as any).serial;
+}
+
 let cachedPort: any = null;
 
 export async function getSerialPorts(): Promise<any[]> {
   if (!isWebSerialSupported()) return [];
-
-  return navigator.serial.getPorts();
+  return getNavSerial().getPorts();
 }
 
-/**
- * Connect / select serial port.
- * forcePicker=true → always show browser picker
- */
 export async function connectSerialPort(
   baudRate = 9600,
-  forcePicker = false,
+  forcePicker = false
 ): Promise<{ success: boolean; portInfo?: string; error?: string }> {
   if (!isWebSerialSupported()) {
     return {
@@ -35,7 +31,7 @@ export async function connectSerialPort(
   }
 
   try {
-    const navSerial = navigator.serial;
+    const navSerial = getNavSerial();
     let port = cachedPort;
 
     if (!forcePicker) {
@@ -65,7 +61,6 @@ export async function connectSerialPort(
       ? `USB VID:${info.usbVendorId?.toString(16)} PID:${info.usbProductId?.toString(16)}`
       : "Serial port terhubung";
 
-    // Keep open for subsequent writes — close after write in printSerial
     await port.close();
 
     return { success: true, portInfo: label };
@@ -90,18 +85,15 @@ export async function disconnectSerialPort(): Promise<void> {
   }
 }
 
-/**
- * Write Uint8Array to serial port (opens, writes in chunks, closes)
- */
 export async function printSerial(
   data: Uint8Array,
-  baudRate = 9600,
+  baudRate = 9600
 ): Promise<void> {
   if (!isWebSerialSupported()) {
     throw new Error("Web Serial API tidak didukung");
   }
 
-  const navSerial = navigator.serial;
+  const navSerial = getNavSerial();
   let port = cachedPort;
 
   if (!port) {
@@ -123,7 +115,6 @@ export async function printSerial(
 
   const writer = port.writable.getWriter();
   try {
-    // Chunk writes (some adapters buffer limited)
     const CHUNK = 512;
     for (let i = 0; i < data.length; i += CHUNK) {
       const slice = data.subarray(i, Math.min(i + CHUNK, data.length));

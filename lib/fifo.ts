@@ -22,7 +22,7 @@ export interface FifoResult {
  */
 export async function planFifoConsume(
   productId: string,
-  qty: number
+  qty: number,
 ): Promise<FifoResult> {
   const supabase = createClient();
   const { data: batches, error } = await supabase
@@ -90,7 +90,8 @@ export async function addStockBatch(
   productId: string,
   qty: number,
   unitCost: number,
-  note?: string
+  note?: string,
+  meta?: { supplier_id?: string | null; delivery_date?: string | null },
 ) {
   if (qty <= 0) return;
   const supabase = createClient();
@@ -101,5 +102,7 @@ export async function addStockBatch(
     unit_cost: unitCost,
     received_at: new Date().toISOString(),
     note: note || "Restock",
+    supplier_id: meta?.supplier_id || null,
+    delivery_date: meta?.delivery_date || new Date().toISOString().slice(0, 10),
   });
 }
