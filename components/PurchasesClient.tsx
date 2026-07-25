@@ -132,24 +132,21 @@ export default function PurchasesClient({ profile }: { profile: Profile }) {
       return;
     }
 
-    // Update stok + FIFO batch
+    // Stok produk: otomatis via trigger purchase_items
+    // Batch FIFO + tautkan supplier ke produk
     for (const l of validLines) {
       const qty = Number(l.quantity);
       const cost = Number(l.unit_cost) || 0;
-      const prod = products.find((x) => x.id === l.product_id);
-      if (!prod) continue;
-      await supabase
-        .from("products")
-        .update({
-          stock: Number(prod.stock) + qty,
-          cost: cost > 0 ? cost : prod.cost,
-          supplier_id: supplierId,
-        })
-        .eq("id", l.product_id);
-      await addStockBatch(l.product_id, qty, cost, `PO ${invoiceNo || purchase.id.slice(0, 8)}`, {
-        supplier_id: supplierId,
-        delivery_date: purchaseDate,
-      });
+      await addStockBatch(
+        l.product_id,
+        qty,
+        cost,
+        `PO ${invoiceNo || purchase.id.slice(0, 8)}`,
+        { supplier_id: supplierId, delivery_date: purchaseDate }
+      );
+      const prodUpdate: Record<string, unknown> = { supplier_id: supplierId };
+      if (cost > 0) prodUpdate.cost = cost;
+      await supabase.from("products").update(prodUpdate).eq("id", l.product_id);
     }
 
     // Hutang otomatis jika belum lunas

@@ -357,6 +357,14 @@ export default function POSClient({ profile }: Props) {
         cashier: profile,
       };
       setLastSale(salePayload);
+      // Update stok lokal (DB sudah via trigger)
+      setProducts((prev) =>
+        prev.map((p) => {
+          const sold = cart.find((c) => c.product.id === p.id);
+          if (!sold) return p;
+          return { ...p, stock: Math.max(0, p.stock - sold.quantity) };
+        })
+      );
       setCart([]);
       setCashReceived("");
       setTempoCustomer("");
