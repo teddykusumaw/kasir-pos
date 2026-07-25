@@ -86,7 +86,7 @@ export default function POSClient({ profile }: Props) {
         .order("name")
         .limit(500);
       setProducts(
-        (all || []).filter((p: any) => (p.status || "active") === "active")
+        (all || []).filter((p: any) => (p.status || "active") === "active"),
       );
     }
   };
@@ -110,7 +110,7 @@ export default function POSClient({ profile }: Props) {
           return prev;
         }
         return prev.map((c) =>
-          c.product.id === product.id ? { ...c, quantity: newQty } : c
+          c.product.id === product.id ? { ...c, quantity: newQty } : c,
         );
       }
       return [...prev, { product, quantity: qty }];
@@ -127,9 +127,7 @@ export default function POSClient({ profile }: Props) {
 
       // 1. Cache lokal: barcode exact + aktif + ada stok
       let found = productsRef.current.find(
-        (p) =>
-          p.barcode === code &&
-          (p.status || "active") === "active"
+        (p) => p.barcode === code && (p.status || "active") === "active",
       );
 
       // 2. Fallback Supabase (kolom minimal + index barcode)
@@ -137,16 +135,16 @@ export default function POSClient({ profile }: Props) {
         const { data } = await supabase
           .from("products")
           .select(
-            "id, name, barcode, price, cost, stock, min_stock, category, unit, status, supplier_id"
+            "id, name, barcode, price, cost, stock, min_stock, category, unit, status, supplier_id",
           )
           .eq("barcode", code)
           .eq("status", "active")
           .maybeSingle();
-        found = data || undefined;
+        found = (data as unknown as Product) || undefined;
         if (found) {
           // sisipkan ke cache lokal
           setProducts((prev) =>
-            prev.some((x) => x.id === found!.id) ? prev : [...prev, found!]
+            prev.some((x) => x.id === found!.id) ? prev : [...prev, found!],
           );
         }
       }
@@ -169,7 +167,7 @@ export default function POSClient({ profile }: Props) {
       setSearch("");
       setShowSearch(false);
     },
-    [addToCart, supabase, processing]
+    [addToCart, supabase, processing],
   );
 
   useBarcodeScanner({
@@ -182,7 +180,7 @@ export default function POSClient({ profile }: Props) {
 
   // Manual search (typing + Enter still works for name search)
   const handleManualKeyDown = async (
-    e: React.KeyboardEvent<HTMLInputElement>
+    e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
     if (e.key !== "Enter") {
       const q = (e.target as HTMLInputElement).value;
@@ -190,7 +188,7 @@ export default function POSClient({ profile }: Props) {
         const results = products.filter(
           (p) =>
             p.name.toLowerCase().includes(q.toLowerCase()) ||
-            (p.barcode && p.barcode.includes(q))
+            (p.barcode && p.barcode.includes(q)),
         );
         setSearchResults(results.slice(0, 8));
         setShowSearch(true);
@@ -211,7 +209,7 @@ export default function POSClient({ profile }: Props) {
         .select("*")
         .eq("barcode", code)
         .maybeSingle();
-      found = data || undefined;
+      found = (data as Product | null) || undefined;
     }
 
     if (found) {
@@ -220,7 +218,7 @@ export default function POSClient({ profile }: Props) {
       const results = products.filter(
         (p) =>
           p.name.toLowerCase().includes(code.toLowerCase()) ||
-          (p.barcode && p.barcode.includes(code))
+          (p.barcode && p.barcode.includes(code)),
       );
       if (results.length === 1) {
         addToCart(results[0]);
@@ -246,7 +244,7 @@ export default function POSClient({ profile }: Props) {
           }
           return { ...c, quantity: newQty };
         })
-        .filter((c) => c.quantity > 0)
+        .filter((c) => c.quantity > 0),
     );
   };
 
@@ -256,17 +254,15 @@ export default function POSClient({ profile }: Props) {
 
   const itemsTotal = cart.reduce(
     (sum, c) => sum + c.product.price * c.quantity,
-    0
+    0,
   );
   const taxBreakdown: TaxBreakdown = calculateTax(
     itemsTotal,
-    taxSettings || { enabled: false, rate: 0, name: "PPN", mode: "disabled" }
+    taxSettings || { enabled: false, rate: 0, name: "PPN", mode: "disabled" },
   );
   const total = taxBreakdown.total;
   const change =
-    paymentMethod === "cash" && cashReceived
-      ? Number(cashReceived) - total
-      : 0;
+    paymentMethod === "cash" && cashReceived ? Number(cashReceived) - total : 0;
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
@@ -293,8 +289,7 @@ export default function POSClient({ profile }: Props) {
           tax_amount: taxBreakdown.taxAmount,
           total: taxBreakdown.total,
           payment_method: paymentMethod,
-          cash_received:
-            paymentMethod === "cash" ? Number(cashReceived) : null,
+          cash_received: paymentMethod === "cash" ? Number(cashReceived) : null,
           change_amount: paymentMethod === "cash" ? change : null,
         })
         .select()
@@ -304,7 +299,11 @@ export default function POSClient({ profile }: Props) {
 
       // FIFO: alokasi batch & HPP per item
       const items: any[] = [];
-      const allAllocations: { batch_id: string; qty: number; unit_cost: number }[] = [];
+      const allAllocations: {
+        batch_id: string;
+        qty: number;
+        unit_cost: number;
+      }[] = [];
       for (const c of cart) {
         let unitCost = c.product.cost || 0;
         try {
@@ -365,7 +364,10 @@ export default function POSClient({ profile }: Props) {
         });
         if (arErr) {
           console.warn("auto piutang:", arErr.message);
-          showMsg("error", "Transaksi OK, tapi piutang gagal dibuat: " + arErr.message);
+          showMsg(
+            "error",
+            "Transaksi OK, tapi piutang gagal dibuat: " + arErr.message,
+          );
         }
       }
 
@@ -390,7 +392,7 @@ export default function POSClient({ profile }: Props) {
           const sold = cart.find((c) => c.product.id === p.id);
           if (!sold) return p;
           return { ...p, stock: Math.max(0, p.stock - sold.quantity) };
-        })
+        }),
       );
       setCart([]);
       setCashReceived("");
@@ -427,7 +429,10 @@ export default function POSClient({ profile }: Props) {
             if (result.method === "browser") {
               setTimeout(() => window.print(), 400);
             } else {
-              showMsg("success", `Struk dicetak via ${result.method.toUpperCase()}`);
+              showMsg(
+                "success",
+                `Struk dicetak via ${result.method.toUpperCase()}`,
+              );
             }
           } else if (result.error) {
             showMsg("error", result.error);
@@ -480,7 +485,9 @@ export default function POSClient({ profile }: Props) {
     };
   };
 
-  const handlePrint = async (mode: "auto" | "serial" | "bluetooth" | "browser") => {
+  const handlePrint = async (
+    mode: "auto" | "serial" | "bluetooth" | "browser",
+  ) => {
     const thermalSale = buildThermalSale();
     if (!thermalSale) return;
 
@@ -790,13 +797,18 @@ export default function POSClient({ profile }: Props) {
                   if (!ts) return;
                   const settings = getPrintSettings();
                   if (!settings.kitchenEnabled) {
-                    showMsg("error", "Printer dapur belum diaktifkan di Pengaturan");
+                    showMsg(
+                      "error",
+                      "Printer dapur belum diaktifkan di Pengaturan",
+                    );
                     return;
                   }
                   const cats = getKitchenCategoryList(settings);
                   const kitchenItems = ts.items.filter((it) => {
                     if (!cats.length) return true;
-                    return it.category && cats.includes(it.category.toLowerCase());
+                    return (
+                      it.category && cats.includes(it.category.toLowerCase())
+                    );
                   });
                   setPrinting(true);
                   const r = await printKitchenSerial(ts, kitchenItems);
