@@ -20,8 +20,12 @@ export interface Product {
   category: string | null;
   unit: string;
   status: "active" | "inactive";
+  supplier_id: string | null;
+  category_id: string | null;
   created_at: string;
   updated_at: string;
+  supplier?: Supplier | null;
+  category_rel?: ProductCategory | null;
 }
 
 export interface Sale {
@@ -84,6 +88,7 @@ export interface DailySales {
   count: number;
 }
 
+
 export interface Expense {
   id: string;
   expense_date: string;
@@ -94,6 +99,7 @@ export interface Expense {
   created_by: string | null;
   created_at: string;
 }
+
 
 export interface Receivable {
   id: string;
@@ -122,18 +128,11 @@ export interface Supplier {
   updated_at: string;
 }
 
-export interface Product {
+
+export interface ProductCategory {
   id: string;
   name: string;
-  barcode: string | null;
-  price: number;
-  cost: number;
-  stock: number;
-  min_stock: number;
-  category: string | null;
-  unit: string;
-  status: "active" | "inactive";
-  supplier_id: string | null; // ← ini
+  description: string | null;
+  is_active: boolean;
   created_at: string;
-  updated_at: string;
 }

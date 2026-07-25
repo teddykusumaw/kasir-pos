@@ -1,14 +1,14 @@
 import AppShell from "@/components/AppShell";
-import SuppliersPageClient from "@/components/SuppliersPageClient";
+import PurchasesClient from "@/components/PurchasesClient";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
-export default async function SuppliersPage() {
+export default async function PurchasesPage() {
   const profile = await getCurrentUser();
   if (!profile) redirect("/login");
   return (
     <AppShell>
-      <SuppliersPageClient profile={profile} />
+      <PurchasesClient profile={profile} />
     </AppShell>
   );
 }

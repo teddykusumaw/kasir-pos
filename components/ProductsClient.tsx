@@ -4,9 +4,8 @@ import { useState, useEffect } from "react";
 import { Plus, Pencil, Search, Package } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-// Supplier type used for dropdown
+import { Product, Supplier } from "@/types/database";
 import { addStockBatch } from "@/lib/fifo";
-import { Product, Profile, Supplier } from "@/types/database";
 
 interface Props {
   initialProducts: Product[];
@@ -20,6 +19,7 @@ const emptyForm = {
   stock: "",
   min_stock: "5",
   category: "",
+  category_id: "",
   supplier_id: "",
   unit: "pcs",
   status: "active",
@@ -33,6 +33,7 @@ export default function ProductsClient({ initialProducts }: Props) {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState("");
   const supabase = createClient();
 
@@ -43,13 +44,19 @@ export default function ProductsClient({ initialProducts }: Props) {
       .eq("is_active", true)
       .order("name")
       .then(({ data }) => setSuppliers((data as Supplier[]) || []));
+    supabase
+      .from("product_categories")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data }) => setCategories(data || []));
   }, [supabase]);
 
   const filtered = products.filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.barcode && p.barcode.includes(search)) ||
-      (p.category && p.category.toLowerCase().includes(search.toLowerCase())),
+      (p.category && p.category.toLowerCase().includes(search.toLowerCase()))
   );
 
   const openAdd = () => {
@@ -69,7 +76,8 @@ export default function ProductsClient({ initialProducts }: Props) {
       stock: String(p.stock),
       min_stock: String(p.min_stock),
       category: p.category || "",
-      supplier_id: (p as any).supplier_id || "",
+      category_id: (p as any).category_id || "",
+      supplier_id: p.supplier_id || "",
       unit: p.unit || "pcs",
       status: p.status || "active",
     });
@@ -89,7 +97,8 @@ export default function ProductsClient({ initialProducts }: Props) {
       cost: Number(form.cost),
       stock: Number(form.stock),
       min_stock: Number(form.min_stock),
-      category: form.category.trim() || null,
+      category: form.category.trim() || categories.find((x) => x.id === form.category_id)?.name || null,
+      category_id: form.category_id || null,
       supplier_id: form.supplier_id || null,
       unit: form.unit.trim() || "pcs",
       status: form.status === "inactive" ? "inactive" : "active",
@@ -107,19 +116,13 @@ export default function ProductsClient({ initialProducts }: Props) {
         // FIFO: stok naik → batch baru
         const delta = Number(payload.stock) - Number(editing.stock);
         if (delta > 0) {
-          await addStockBatch(
-            editing.id,
-            delta,
-            Number(payload.cost) || 0,
-            "Update stok",
-            {
-              supplier_id: payload.supplier_id || null,
-              delivery_date: new Date().toISOString().slice(0, 10),
-            },
-          );
+          await addStockBatch(editing.id, delta, Number(payload.cost) || 0, "Update stok", {
+            supplier_id: payload.supplier_id || null,
+            delivery_date: new Date().toISOString().slice(0, 10),
+          });
         }
         setProducts((prev) =>
-          prev.map((p) => (p.id === editing.id ? data : p)),
+          prev.map((p) => (p.id === editing.id ? data : p))
         );
       } else {
         const { data, error: err } = await supabase
@@ -129,20 +132,12 @@ export default function ProductsClient({ initialProducts }: Props) {
           .single();
         if (err) throw err;
         if (Number(payload.stock) > 0) {
-          await addStockBatch(
-            data.id,
-            Number(payload.stock),
-            Number(payload.cost) || 0,
-            "Stok awal",
-            {
-              supplier_id: payload.supplier_id || null,
-              delivery_date: new Date().toISOString().slice(0, 10),
-            },
-          );
+          await addStockBatch(data.id, Number(payload.stock), Number(payload.cost) || 0, "Stok awal", {
+            supplier_id: payload.supplier_id || null,
+            delivery_date: new Date().toISOString().slice(0, 10),
+          });
         }
-        setProducts((prev) =>
-          [...prev, data].sort((a, b) => a.name.localeCompare(b.name)),
-        );
+        setProducts((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
       }
       setShowModal(false);
     } catch (err: any) {
@@ -156,9 +151,7 @@ export default function ProductsClient({ initialProducts }: Props) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Manajemen Produk
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-900">Manajemen Produk</h1>
           <p className="text-slate-500">Tambah & update item + stok</p>
         </div>
         <button
@@ -195,6 +188,7 @@ export default function ProductsClient({ initialProducts }: Props) {
                 <th className="text-left px-4 py-3 font-medium">Modal</th>
                 <th className="text-left px-4 py-3 font-medium">Stok</th>
                 <th className="text-left px-4 py-3 font-medium">Kategori</th>
+                <th className="text-left px-4 py-3 font-medium">Supplier</th>
                 <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="text-left px-4 py-3 font-medium">Aksi</th>
               </tr>
@@ -248,9 +242,7 @@ export default function ProductsClient({ initialProducts }: Props) {
                             : "bg-slate-200 text-slate-600"
                         }`}
                       >
-                        {(p.status || "active") === "active"
-                          ? "Aktif"
-                          : "Nonaktif"}
+                        {(p.status || "active") === "active" ? "Aktif" : "Nonaktif"}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -312,13 +304,22 @@ export default function ProductsClient({ initialProducts }: Props) {
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Kategori
                   </label>
-                  <input
-                    value={form.category}
-                    onChange={(e) =>
-                      setForm({ ...form, category: e.target.value })
-                    }
+                  <select
+                    value={form.category_id}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      const nm = categories.find((x) => x.id === id)?.name || "";
+                      setForm({ ...form, category_id: id, category: nm });
+                    }}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                  />
+                  >
+                    <option value="">— Pilih kategori —</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -364,7 +365,9 @@ export default function ProductsClient({ initialProducts }: Props) {
                     type="number"
                     min="0"
                     value={form.cost}
-                    onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, cost: e.target.value })
+                    }
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                   />
                 </div>
@@ -405,7 +408,9 @@ export default function ProductsClient({ initialProducts }: Props) {
                   </label>
                   <input
                     value={form.unit}
-                    onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, unit: e.target.value })
+                    }
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                   />
                 </div>
