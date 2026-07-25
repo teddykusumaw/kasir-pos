@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { Product, Supplier } from "@/types/database";
 import { addStockBatch } from "@/lib/fifo";
+import { SUPPLIER_OPTION_SELECT } from "@/lib/supplierQueries";
 
 interface Props {
   initialProducts: Product[];
@@ -40,7 +41,7 @@ export default function ProductsClient({ initialProducts }: Props) {
   useEffect(() => {
     supabase
       .from("suppliers")
-      .select("*")
+      .select(SUPPLIER_OPTION_SELECT)
       .eq("is_active", true)
       .order("name")
       .then(({ data }) => setSuppliers((data as Supplier[]) || []));

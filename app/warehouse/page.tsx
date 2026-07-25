@@ -2,6 +2,11 @@ import AppShell from "@/components/AppShell";
 import WarehousePageClient from "@/components/WarehousePageClient";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  PRODUCT_WAREHOUSE_SELECT,
+  SUPPLIER_OPTION_SELECT,
+  BATCH_DELIVERY_SELECT,
+} from "@/lib/supplierQueries";
 import { redirect } from "next/navigation";
 
 export default async function WarehousePage() {
@@ -11,11 +16,18 @@ export default async function WarehousePage() {
   const supabase = await createClient();
   const [{ data: products }, { data: suppliers }, { data: batches }] =
     await Promise.all([
-      supabase.from("products").select("*").order("name"),
-      supabase.from("suppliers").select("*").order("name"),
+      supabase
+        .from("products")
+        .select(PRODUCT_WAREHOUSE_SELECT)
+        .order("name"),
+      supabase
+        .from("suppliers")
+        .select(SUPPLIER_OPTION_SELECT)
+        .eq("is_active", true)
+        .order("name"),
       supabase
         .from("stock_batches")
-        .select("product_id, delivery_date, received_at")
+        .select(BATCH_DELIVERY_SELECT)
         .order("delivery_date", { ascending: false }),
     ]);
 
@@ -31,8 +43,8 @@ export default async function WarehousePage() {
     <AppShell>
       <WarehousePageClient
         profile={profile}
-        products={products || []}
-        suppliers={suppliers || []}
+        products={(products as any) || []}
+        suppliers={(suppliers as any) || []}
         deliveryByProduct={deliveryByProduct}
       />
     </AppShell>

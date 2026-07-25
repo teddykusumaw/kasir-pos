@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { downloadExcel } from "@/lib/exportExcel";
+import { PURCHASE_LEDGER_SELECT } from "@/lib/supplierQueries";
 import { FileSpreadsheet } from "lucide-react";
 
 interface LedgerRow {
@@ -25,11 +26,36 @@ export default function SupplierLedgerClient() {
 
   const load = useCallback(async () => {
     setLoading(true);
+
+    // 1) Coba view agregasi (lebih ringan)
+    if (!from && !to) {
+      const { data: viewData, error: viewErr } = await supabase
+        .from("v_supplier_ledger")
+        .select(
+          "supplier_id, supplier_name, purchase_count, qty_items, total_purchase, total_paid, remaining"
+        )
+        .order("remaining", { ascending: false });
+      if (!viewErr && viewData) {
+        setRows(
+          viewData.map((r: any) => ({
+            supplier_id: r.supplier_id,
+            name: r.supplier_name,
+            qty_items: Number(r.qty_items) || 0,
+            total_purchase: Number(r.total_purchase) || 0,
+            total_paid: Number(r.total_paid) || 0,
+            remaining: Math.max(0, Number(r.remaining) || 0),
+            purchase_count: Number(r.purchase_count) || 0,
+          }))
+        );
+        setLoading(false);
+        return;
+      }
+    }
+
+    // 2) Fallback: join kolom minimal + agregasi di client
     let q = supabase
       .from("purchases")
-      .select(
-        "id, supplier_id, subtotal, amount_paid, status, purchase_date, suppliers(name), purchase_items(quantity)"
-      )
+      .select(PURCHASE_LEDGER_SELECT)
       .neq("status", "cancelled");
     if (from) q = q.gte("purchase_date", from);
     if (to) q = q.lte("purchase_date", to);
@@ -87,7 +113,7 @@ export default function SupplierLedgerClient() {
         <div>
           <h2 className="text-lg font-semibold">Rekap Supplier</h2>
           <p className="text-xs text-slate-500">
-            Qty item masuk · total nominal · sudah bayar · sisa hutang
+            Qty item · nominal · dibayar · sisa hutang (query optimasi)
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-end">
@@ -211,10 +237,6 @@ export default function SupplierLedgerClient() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-400">
-        Sisa hutang supplier masuk ke <strong>Neraca → Kewajiban (hutang usaha)</strong> bila
-        juga tercatat di menu Hutang/Piutang. Pembelian menambah persediaan (aset).
-      </p>
     </div>
   );
 }

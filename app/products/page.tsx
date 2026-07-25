@@ -2,6 +2,10 @@ import AppShell from "@/components/AppShell";
 import ProductsPageClient from "@/components/ProductsPageClient";
 import { requireAdmin, getCurrentUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import {
+  PRODUCT_LIST_SELECT_SIMPLE,
+  mapProductJoins,
+} from "@/lib/supplierQueries";
 import { redirect } from "next/navigation";
 
 export default async function ProductsPage() {
@@ -12,19 +16,15 @@ export default async function ProductsPage() {
   const supabase = await createClient();
   const { data: products } = await supabase
     .from("products")
-    .select("*, suppliers(id, name), product_categories(id, name)")
+    .select(PRODUCT_LIST_SELECT_SIMPLE)
     .order("name");
-
-  const mapped = (products || []).map((p: any) => ({
-    ...p,
-    supplier: p.suppliers || null,
-    category_rel: p.product_categories || null,
-    category: p.category || p.product_categories?.name || null,
-  }));
 
   return (
     <AppShell>
-      <ProductsPageClient profile={profile} initialProducts={mapped} />
+      <ProductsPageClient
+        profile={profile}
+        initialProducts={mapProductJoins(products as any)}
+      />
     </AppShell>
   );
 }

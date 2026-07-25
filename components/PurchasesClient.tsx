@@ -5,6 +5,11 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { Profile, Supplier, Product } from "@/types/database";
 import { addStockBatch } from "@/lib/fifo";
+import {
+  SUPPLIER_OPTION_SELECT,
+  PRODUCT_OPTION_SELECT,
+  PURCHASE_LIST_SELECT,
+} from "@/lib/supplierQueries";
 import { Plus, Trash2 } from "lucide-react";
 
 type Line = { product_id: string; quantity: string; unit_cost: string };
@@ -43,11 +48,11 @@ export default function PurchasesClient({ profile }: { profile: Profile }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: s }, { data: p }, { data: pur }] = await Promise.all([
-      supabase.from("suppliers").select("*").eq("is_active", true).order("name"),
-      supabase.from("products").select("*").order("name"),
+      supabase.from("suppliers").select(SUPPLIER_OPTION_SELECT).eq("is_active", true).order("name"),
+      supabase.from("products").select(PRODUCT_OPTION_SELECT).order("name"),
       supabase
         .from("purchases")
-        .select("*, suppliers(name), purchase_items(quantity)")
+        .select(PURCHASE_LIST_SELECT)
         .order("purchase_date", { ascending: false })
         .limit(100),
     ]);
