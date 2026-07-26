@@ -168,10 +168,17 @@ export async function listProductBatches(productId: string) {
       "id, product_id, qty_remaining, qty_initial, unit_cost, received_at, delivery_date, expiry_date, supplier_id, note, suppliers(name)"
     )
     .eq("product_id", productId)
-    .order("expiry_date", { ascending: true, nullsFirst: false })
     .order("received_at", { ascending: true });
   if (error) throw new Error(error.message);
-  return data || [];
+  // FEFO sort di client (null ED di akhir)
+  const today = todayISO();
+  return sortBatchesForConsume(
+    (data || []).map((b: any) => ({
+      ...b,
+      received_at: b.received_at,
+      expiry_date: b.expiry_date,
+    }))
+  );
 }
 
 export async function updateBatchExpiry(

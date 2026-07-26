@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import {
@@ -10,22 +10,32 @@ import {
   adjustBatchQty,
   addStockBatch,
 } from "@/lib/fifo";
-import { Product, Profile } from "@/types/database";
+import { Profile } from "@/types/database";
 import { AlertTriangle, Plus } from "lucide-react";
+
+type ProductOption = {
+  id: string;
+  name: string;
+  cost: number;
+  stock: number;
+  unit: string;
+};
 
 export default function BatchesClient({ profile }: { profile: Profile }) {
   const [expiring, setExpiring] = useState<any[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
   const [productId, setProductId] = useState("");
   const [batches, setBatches] = useState<any[]>([]);
   const [days, setDays] = useState(30);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addQty, setAddQty] = useState("1");
   const [addCost, setAddCost] = useState("0");
   const [addExpiry, setAddExpiry] = useState("");
-  const supabase = createClient();
+
+  const supabase = useMemo(() => createClient(), []);
   const isAdmin = profile.role === "admin";
 
   const loadExpiring = useCallback(async () => {
@@ -33,16 +43,47 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
       const rows = await listExpiringBatches(days);
       setExpiring(rows);
     } catch (e: any) {
-      setMsg(e.message);
+      console.warn("listExpiringBatches", e);
+      setExpiring([]);
+      // Jangan timpa msg produk; tampilkan hanya jika kolom ED belum ada
+      if (String(e?.message || "").toLowerCase().includes("expiry")) {
+        setMsg(
+          "Kolom expiry_date belum ada. Jalankan migration_batch_expiry.sql di Supabase."
+        );
+      }
     }
   }, [days]);
 
   const loadProducts = useCallback(async () => {
-    const { data } = await supabase
-      .from("products")
-      .select("id, name, cost, stock, unit")
-      .order("name");
-    setProducts((data as Product[]) || []);
+    setLoadingProducts(true);
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, cost, stock, unit")
+        .order("name");
+
+      if (error) {
+        console.error("loadProducts", error);
+        setMsg(`Gagal muat produk: ${error.message}`);
+        setProducts([]);
+      } else {
+        setProducts(
+          (data || []).map((p) => ({
+            id: p.id,
+            name: p.name,
+            cost: Number(p.cost ?? 0),
+            stock: Number(p.stock ?? 0),
+            unit: p.unit || "pcs",
+          }))
+        );
+      }
+    } catch (e: any) {
+      console.error(e);
+      setMsg(e?.message || "Gagal muat produk");
+      setProducts([]);
+    } finally {
+      setLoadingProducts(false);
+    }
   }, [supabase]);
 
   const loadBatches = useCallback(async () => {
@@ -55,15 +96,19 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
       const rows = await listProductBatches(productId);
       setBatches(rows);
     } catch (e: any) {
-      setMsg(e.message);
+      setMsg(e.message || "Gagal muat batch");
+      setBatches([]);
     }
     setLoading(false);
   }, [productId]);
 
   useEffect(() => {
-    loadExpiring();
     loadProducts();
-  }, [loadExpiring, loadProducts]);
+  }, [loadProducts]);
+
+  useEffect(() => {
+    loadExpiring();
+  }, [loadExpiring]);
 
   useEffect(() => {
     loadBatches();
@@ -71,46 +116,62 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
 
   const saveExpiry = async (id: string, value: string) => {
     if (!isAdmin) return;
-    await updateBatchExpiry(id, value || null);
-    setMsg("ED batch diperbarui");
-    loadBatches();
-    loadExpiring();
+    try {
+      await updateBatchExpiry(id, value || null);
+      setMsg("ED batch diperbarui");
+      loadBatches();
+      loadExpiring();
+    } catch (e: any) {
+      setMsg(e.message);
+    }
   };
 
   const saveQty = async (id: string, value: string) => {
     if (!isAdmin) return;
-    await adjustBatchQty(id, Number(value) || 0, "Adjust qty batch");
-    setMsg("Qty batch diperbarui");
-    loadBatches();
+    try {
+      await adjustBatchQty(id, Number(value) || 0, "Adjust qty batch");
+      setMsg("Qty batch diperbarui");
+      loadBatches();
+    } catch (e: any) {
+      setMsg(e.message);
+    }
   };
 
   const addBatch = async () => {
     if (!isAdmin || !productId) return;
     const qty = Number(addQty);
-    if (qty <= 0) return;
-    setLoading(true);
-    await addStockBatch(productId, qty, Number(addCost) || 0, "Manual batch", {
-      expiry_date: addExpiry || null,
-      delivery_date: new Date().toISOString().slice(0, 10),
-    });
-    // stok produk: naikkan manual (bukan lewat purchase trigger)
-    const prod = products.find((p) => p.id === productId);
-    if (prod) {
-      await supabase
-        .from("products")
-        .update({ stock: Number(prod.stock) + qty })
-        .eq("id", productId);
+    if (qty <= 0) {
+      setMsg("Qty harus > 0");
+      return;
     }
-    setShowAdd(false);
-    setAddQty("1");
-    setAddExpiry("");
-    setMsg("Batch ditambahkan");
+    setLoading(true);
+    try {
+      await addStockBatch(productId, qty, Number(addCost) || 0, "Manual batch", {
+        expiry_date: addExpiry || null,
+        delivery_date: new Date().toISOString().slice(0, 10),
+      });
+      const prod = products.find((p) => p.id === productId);
+      if (prod) {
+        await supabase
+          .from("products")
+          .update({ stock: Number(prod.stock) + qty })
+          .eq("id", productId);
+      }
+      setShowAdd(false);
+      setAddQty("1");
+      setAddExpiry("");
+      setMsg("Batch ditambahkan");
+      await loadBatches();
+      await loadProducts();
+      await loadExpiring();
+    } catch (e: any) {
+      setMsg(e?.message || "Gagal tambah batch");
+    }
     setLoading(false);
-    loadBatches();
-    loadProducts();
   };
 
   const today = new Date().toISOString().slice(0, 10);
+  const selected = products.find((p) => p.id === productId);
 
   return (
     <div className="space-y-6">
@@ -122,10 +183,11 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
       </div>
 
       {msg && (
-        <p className="text-sm bg-slate-50 px-3 py-2 rounded-lg">{msg}</p>
+        <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2 rounded-lg">
+          {msg}
+        </p>
       )}
 
-      {/* Alert expiring */}
       <div className="bg-white border rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold flex items-center gap-2">
@@ -161,7 +223,8 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
               {expiring.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="text-center py-6 text-slate-400">
-                    Tidak ada batch dalam rentang ED
+                    Tidak ada batch dalam rentang ED (isi ED di batch produk di
+                    bawah)
                   </td>
                 </tr>
               ) : (
@@ -193,28 +256,46 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
         </div>
       </div>
 
-      {/* Per produk */}
       <div className="bg-white border rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap gap-2 items-end justify-between">
           <div>
             <label className="text-xs text-slate-500">Pilih produk</label>
             <select
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              className="block mt-1 px-3 py-2 border rounded-lg text-sm min-w-[220px]"
+              onChange={(e) => {
+                setProductId(e.target.value);
+                const p = products.find((x) => x.id === e.target.value);
+                if (p) setAddCost(String(p.cost || 0));
+              }}
+              className="block mt-1 px-3 py-2 border rounded-lg text-sm min-w-[260px]"
+              disabled={loadingProducts}
             >
-              <option value="">— Produk —</option>
+              <option value="">
+                {loadingProducts
+                  ? "Memuat produk..."
+                  : products.length === 0
+                    ? "— Tidak ada produk —"
+                    : "— Pilih produk —"}
+              </option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} (stok {p.stock})
+                  {p.name} (stok {p.stock} {p.unit})
                 </option>
               ))}
             </select>
+            {!loadingProducts && products.length === 0 && (
+              <p className="text-xs text-red-500 mt-1">
+                Produk tidak ter-load. Cek menu Produk / console error.
+              </p>
+            )}
           </div>
           {isAdmin && productId && (
             <button
               type="button"
-              onClick={() => setShowAdd(true)}
+              onClick={() => {
+                setShowAdd(true);
+                if (selected) setAddCost(String(selected.cost || 0));
+              }}
               className="flex items-center gap-1 px-3 py-2 bg-primary-600 text-white rounded-lg text-sm"
             >
               <Plus size={14} /> Batch baru
@@ -243,14 +324,14 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
               value={addExpiry}
               onChange={(e) => setAddExpiry(e.target.value)}
               className="px-2 py-1.5 border rounded-lg text-sm"
-              title="Expiry date"
+              title="Tanggal kedaluwarsa"
             />
             <div className="flex gap-1">
               <button
                 type="button"
                 onClick={addBatch}
                 disabled={loading}
-                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm"
+                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm disabled:opacity-50"
               >
                 Simpan
               </button>
@@ -281,40 +362,36 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
               {!productId ? (
                 <tr>
                   <td colSpan={6} className="text-center py-6 text-slate-400">
-                    Pilih produk
+                    Pilih produk di atas
                   </td>
                 </tr>
               ) : loading ? (
                 <tr>
                   <td colSpan={6} className="text-center py-6 text-slate-400">
-                    Memuat...
+                    Memuat batch...
                   </td>
                 </tr>
               ) : batches.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-6 text-slate-400">
-                    Belum ada batch
+                    Belum ada batch — klik &quot;Batch baru&quot; atau catat
+                    Pembelian
                   </td>
                 </tr>
               ) : (
                 batches.map((b) => {
                   const expired = b.expiry_date && b.expiry_date < today;
+                  const limit = new Date();
+                  limit.setDate(limit.getDate() + days);
                   const soon =
                     b.expiry_date &&
                     !expired &&
-                    b.expiry_date <=
-                      new Date(Date.now() + days * 86400000)
-                        .toISOString()
-                        .slice(0, 10);
+                    b.expiry_date <= limit.toISOString().slice(0, 10);
                   return (
                     <tr
                       key={b.id}
                       className={`border-t ${
-                        expired
-                          ? "bg-red-50"
-                          : soon
-                            ? "bg-amber-50"
-                            : ""
+                        expired ? "bg-red-50" : soon ? "bg-amber-50" : ""
                       }`}
                     >
                       <td className="px-3 py-2 text-xs">
@@ -372,8 +449,8 @@ export default function BatchesClient({ profile }: { profile: Profile }) {
           </table>
         </div>
         <p className="text-xs text-slate-400">
-          Saat penjualan, sistem memakai FEFO (ED terdekat) lalu FIFO (masuk
-          lebih dulu). Batch expired dipakai hanya jika stok non-expired habis.
+          Saat penjualan: FEFO (ED terdekat) lalu FIFO. Batch expired hanya jika
+          stok non-expired habis.
         </p>
       </div>
     </div>
